@@ -1,28 +1,10 @@
 "use client";
 
 import type { Capability, PrintMode, PrintSettings } from "@/lib/epson/types";
-import { colorLabel, paperSizeLabel, paperTypeLabel, qualityLabel, sourceLabel } from "@/lib/ui/labels";
+import { colorLabel, paperSizeLabel, paperTypeLabel, qualityLabel, sourceLabel } from "@/lib/epson/labels";
+import { resolveSettings } from "@/lib/epson/settings";
 
-const pick = (opts: string[], preferred: string[], current?: string) =>
-  (current && opts.includes(current) ? current : preferred.find((p) => opts.includes(p))) ?? opts[0] ?? "";
-
-/** Resolve a valid settings combination from the capability response, keeping current choices where still valid. */
-export function resolveSettings(cap: Capability, cur: Partial<PrintSettings> = {}): PrintSettings {
-  const sizes = cap.paperSizes.map((p) => p.paperSize);
-  const paperSize = pick(sizes, ["ps_a4", "ps_letter"], cur.paperSize);
-  const types = cap.paperSizes.find((p) => p.paperSize === paperSize)?.paperTypes ?? [];
-  const paperType = pick(types.map((t) => t.paperType), ["pt_plainpaper"], cur.paperType);
-  const t = types.find((x) => x.paperType === paperType);
-  return {
-    paperSize,
-    paperType,
-    paperSource: pick(t?.paperSources ?? [], [], cur.paperSource),
-    printQuality: pick(t?.printQualities ?? [], ["normal"], cur.printQuality),
-    borderless: !!t?.borderless && !!cur.borderless,
-    colorMode: pick(cap.colorModes, ["color"], cur.colorMode),
-    copies: cur.copies ?? 1,
-  };
-}
+export { resolveSettings };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

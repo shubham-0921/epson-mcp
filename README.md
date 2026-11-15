@@ -46,6 +46,51 @@ await client.withToken(myTokenStore, (t) => client.getDeviceInfo(t));
 - OAuth log entries are carried across the callback redirect in the encrypted session and handed to the UI once.
 - In step-by-step mode the `uploadUri` goes to the browser only as a sealed (encrypted) ticket.
 - **Job status (Call 6):** after Execute print, the UI polls `GET /api/print/status` (1.5 s at first, backing off to 5 s, for up to 3 minutes) until the job is `completed` or `canceled`. Status values come from the v1.3 spec, Appendix E: `pending`, `processing`, `processing_stopped` (`media_jam`, `media_empty`, `marker_supply_empty`, `attention_required`), `canceled`, `completed`. The parser accepts both snake_case and camelCase fields.
-- **Unconfirmed:** the 2.0 path for Call 6 is assumed to be `GET /printing/jobs/{jobId}`, because v1 used `/printers/{device_id}/jobs/{job_id}` and 2.0 drops the device ID. If Epson's reference says otherwise, set `EPSON_JOB_INFO_PATH`; no code change is needed.
+- **Confirmed live:** Call 6 is `GET /printing/jobs/{jobId}` (v1 used `/printers/{device_id}/jobs/{job_id}`). `EPSON_JOB_INFO_PATH` can still override it.
 - Not built yet: Cancel (Epson only allows it while a job is `pending`) and the P2 items.
 - A second dev config, `dev-mock` in `.claude/launch.json`, runs mock mode on port 3005 without touching `.env.local`.
+
+## MCP server (Phase 1: local, stdio)
+
+Lets Claude Desktop print through your Epson printer. The design plan is the "Epson Print MCP Server — Design Plan" doc.
+
+| Tool | What it does | Epson calls |
+|---|---|---|
+| `get_printer_status` | Printer name, serial number, online or offline | 1 |
+| `get_print_options` | Supported sizes, paper types, qualities, colours, sources, and defaults | 2 |
+| `print_document` | Prints Markdown (rendered to PDF) or a base64 PDF/JPEG/PNG up to 1 MB. Settings are optional and readable ("Letter", "photo paper", "black and white") | 1, 2, 3, 4, 5, 6 |
+| `get_print_job_status` | Queued, printing, paused (with reason), printed or canceled; can wait up to 50 s with progress updates | 6 |
+
+Limits: 1–10 copies; more than 30 printed pages (pages × copies) needs `confirm_large: true`, which Claude should only set after asking.
+
+### Set up
+
+1. **Sign in once.** This opens Epson's sign-in. After you pick the printer, the console page shows a one-time code; paste it into the terminal. Tokens are saved to `~/.config/epson-print-mcp/tokens.json` (mode 600) and refreshed automatically.
+
+   ```bash
+   npm run mcp:login
+   ```
+
+   The code page needs the deployed console to include the `cli_` handling in `/api/auth/callback`.
+
+2. **Add it to Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`), using absolute paths:
+
+   ```json
+   {
+     "mcpServers": {
+       "epson-print": {
+         "command": "/absolute/path/to/node",
+         "args": ["/absolute/path/to/epson/node_modules/tsx/dist/cli.mjs", "/absolute/path/to/epson/mcp/stdio.mts"]
+       }
+     }
+   }
+   ```
+
+   Restart Claude Desktop. Add `"env": { "EPSON_MOCK": "true" }` to try it without a printer.
+
+### Develop and test
+
+- `npm run mcp:smoke` starts the server in mock mode and runs every tool through a real MCP client (15 checks).
+- `npm run mcp` runs the server on stdio by hand. Logs (redacted) go to stderr.
+- Code: tools in `lib/mcp/tools.ts` (transport-agnostic, reused by the Phase 2 remote endpoint), sources and Markdown → PDF in `lib/mcp/sources.ts`, local token file in `lib/mcp/file-store.ts`, entry points in `mcp/`.
+- Markdown → PDF uses the standard PDF fonts, so characters outside Windows-1252 (e.g. emoji) print as `?`.

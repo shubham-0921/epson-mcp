@@ -22,7 +22,12 @@ export type LoggedResponse = { status: number; ok: boolean; headers: Record<stri
 let counter = 0;
 const newId = () => `${Date.now().toString(36)}-${(counter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-export class TimeoutError extends Error {}
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
 
 export async function loggedFetch(
   transport: Transport,

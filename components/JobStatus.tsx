@@ -1,6 +1,7 @@
 "use client";
 
 import type { JobInfo } from "@/lib/epson/types";
+import { JOB_REASONS as REASONS } from "@/lib/epson/job-text";
 import { StateIcon } from "./Inspector";
 
 export type JobTracking = {
@@ -9,16 +10,6 @@ export type JobTracking = {
   info: JobInfo | null;
   checks: number;
   error?: string;
-};
-
-const REASONS: Record<string, string> = {
-  media_jam: "Paper jam — clear it on the printer and printing will continue.",
-  media_empty: "Out of paper — load paper and printing will continue.",
-  marker_supply_empty: "Out of ink — replace or refill the ink.",
-  attention_required: "The printer needs attention. Check its screen.",
-  job_canceled_by_user: "Canceled by the user (Epson Connect user page or Cancel API).",
-  job_canceled_by_out_of_storage_period: "Canceled because the job wasn’t printed within 72 hours.",
-  complete_with_warning: "Finished, but some files couldn’t be printed.",
 };
 
 function describe(info: JobInfo | null): { title: string; detail?: string; tone: "ok" | "err" | "warn" | "info" } {
