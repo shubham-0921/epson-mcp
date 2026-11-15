@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiLogEntry, ApiStep, Capability, DeviceInfo, PrintMode, PrintSettings } from "@/lib/epson/types";
+import type { ApiLogEntry, ApiStep, Capability, DeviceInfo, JobInfo, PrintMode, PrintSettings } from "@/lib/epson/types";
 import Inspector, { StateIcon } from "./Inspector";
 import Settings, { resolveSettings } from "./Settings";
 import FileDrop from "./FileDrop";
+import JobStatus, { type JobTracking } from "./JobStatus";
 
 type Session = { connected: boolean; mock: boolean };
 type RunState = { phase: "idle" | "running" | "done" | "error" | "stopped"; jobId?: string; failedStep?: ApiStep; error?: string; body?: unknown };
@@ -22,14 +23,24 @@ const STEP_LABEL: Partial<Record<ApiStep, string>> = { createJob: "step 3 (creat
 
 function placeholders(): ApiLogEntry[] {
   const now = new Date().toISOString();
-  const ph = (step: ApiStep, label: string, url: string): ApiLogEntry => ({
-    id: `ph-${step}`, step, label, method: "POST", url, request: { headers: {} }, status: "pending", startedAt: now,
+  const ph = (step: ApiStep, label: string, url: string, method: "GET" | "POST" = "POST"): ApiLogEntry => ({
+    id: `ph-${step}`, step, label, method, url, request: { headers: {} }, status: "pending", startedAt: now,
   });
   return [
     ph("createJob", "3 · Create print job", `${API}/printing/jobs`),
     ph("upload", "4 · Upload file", "{uploadUri}&File=1.<ext>"),
     ph("print", "5 · Execute print", `${API}/printing/jobs/{jobId}/print`),
+    ph("jobInfo", "6 · Get print job information", `${API}/printing/jobs/{jobId}`, "GET"),
   ];
+}
+
+// Poll quickly at first, then back off. Stop after 3 minutes.
+const POLL_DELAYS = [1500, 2000, 2500, 3000, 3000, 4000, 5000];
+const POLL_LIMIT_MS = 3 * 60 * 1000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function dropPlaceholders(keepJobInfo = false) {
+  return (prev: ApiLogEntry[]) => prev.filter((e) => !e.id.startsWith("ph-") || (keepJobInfo && e.id === "ph-jobInfo"));
 }
 
 export default function Console() {
@@ -47,6 +58,8 @@ export default function Console() {
   const [stepMode, setStepMode] = useState(false);
   const [gate, setGate] = useState<{ label: string; resolve: (go: boolean) => void } | null>(null);
   const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
+  const [job, setJob] = useState<JobTracking | null>(null);
+  const pollToken = useRef(0);
   const capInFlight = useRef(new Set<PrintMode>());
   const logLoaded = useRef(false);
 
@@ -172,6 +185,8 @@ export default function Console() {
 
   // ---------- actions ----------
   const disconnect = async () => {
+    pollToken.current++;
+    setJob(null);
     await fetch("/api/auth/logout", { method: "POST" });
     setSession((s) => (s ? { ...s, connected: false } : s));
     setDevice(null);
@@ -189,7 +204,7 @@ export default function Console() {
     if (f) setMode(f.type === "application/pdf" ? "document" : "photo");
   };
 
-  const runStreamed = async (f: File, s: PrintSettings) => {
+  const runStreamed = async (f: File, s: PrintSettings): Promise<string | undefined> => {
     const fd = new FormData();
     fd.append("file", f);
     fd.append("printMode", mode);
@@ -205,6 +220,7 @@ export default function Console() {
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
     let finished = false;
+    let jobId: string | undefined;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -215,28 +231,32 @@ export default function Console() {
         if (!line.trim()) continue;
         const evt = JSON.parse(line);
         if (evt.type === "log") addEntries([evt.entry]);
-        else if (evt.type === "done") { finished = true; setRun({ phase: "done", jobId: evt.jobId }); }
+        else if (evt.type === "done") { finished = true; jobId = evt.jobId; setRun({ phase: "done", jobId: evt.jobId }); }
         else if (evt.type === "error") { finished = true; setRun({ phase: "error", failedStep: evt.step, error: evt.error, body: evt.body }); }
       }
     }
     if (!finished) setRun({ phase: "error", error: "Connection to the server was lost before the print finished." });
+    return jobId;
   };
 
-  const runStepped = async (f: File, s: PrintSettings) => {
+  const runStepped = async (f: File, s: PrintSettings): Promise<string | undefined> => {
     const waitGate = (label: string) => new Promise<boolean>((resolve) => setGate({ label, resolve }));
-    const fail = (step: ApiStep, e: unknown) => {
+    const fail = (step: ApiStep, e: unknown): undefined => {
       const p = e instanceof ApiError ? e.payload : { error: String(e) };
       setRun({ phase: "error", failedStep: step, error: p.error, body: p.body });
     };
+    const stop = (): undefined => {
+      setRun({ phase: "stopped" });
+    };
 
-    if (!(await waitGate("3 · Create print job"))) return setRun({ phase: "stopped" });
+    if (!(await waitGate("3 · Create print job"))) return stop();
     setGate(null);
     let job: { jobId: string; ticket: string };
     try {
       job = await api("/api/print/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ printMode: mode, settings: s, fileName: f.name }) });
     } catch (e) { return fail("createJob", e); }
 
-    if (!(await waitGate("4 · Upload file"))) return setRun({ phase: "stopped" });
+    if (!(await waitGate("4 · Upload file"))) return stop();
     setGate(null);
     try {
       const fd = new FormData();
@@ -245,28 +265,74 @@ export default function Console() {
       await api("/api/print/upload", { method: "POST", body: fd });
     } catch (e) { return fail("upload", e); }
 
-    if (!(await waitGate("5 · Execute print"))) return setRun({ phase: "stopped" });
+    if (!(await waitGate("5 · Execute print"))) return stop();
     setGate(null);
     try {
       await api("/api/print/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: job.jobId }) });
     } catch (e) { return fail("print", e); }
     setRun({ phase: "done", jobId: job.jobId });
+    return job.jobId;
+  };
+
+  /** Call 6 — poll Get print job information until the job is completed or canceled. */
+  const pollJob = async (jobId: string, gated: boolean) => {
+    const token = ++pollToken.current;
+    const alive = () => pollToken.current === token;
+    const end = (patch: Partial<JobTracking>) => {
+      if (!alive()) return;
+      setJob((j) => (j ? { ...j, ...patch } : j));
+      setLog(dropPlaceholders());
+    };
+
+    setJob((j) => ({ jobId, phase: gated ? "waiting" : "polling", info: j?.jobId === jobId ? j.info : null, checks: j?.jobId === jobId ? j.checks : 0 }));
+    if (gated) {
+      const go = await new Promise<boolean>((resolve) => setGate({ label: "6 · Get print job information", resolve }));
+      setGate(null);
+      if (!alive()) return;
+      if (!go) return end({ phase: "stopped" });
+      setJob((j) => (j ? { ...j, phase: "polling" } : j));
+    }
+
+    const started = Date.now();
+    for (let attempt = 1; ; attempt++) {
+      let info: JobInfo;
+      try {
+        info = (await api<{ job: JobInfo }>(`/api/print/status?jobId=${encodeURIComponent(jobId)}&attempt=${attempt}`)).job;
+      } catch (e) {
+        return end({ phase: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+      if (!alive()) return;
+      setJob((j) => (j ? { ...j, info, checks: j.checks + 1 } : j));
+      if (info.final) return end({ phase: "final" });
+      if (Date.now() - started > POLL_LIMIT_MS) return end({ phase: "timeout" });
+      await sleep(POLL_DELAYS[Math.min(attempt - 1, POLL_DELAYS.length - 1)]);
+      if (!alive()) return;
+    }
+  };
+
+  const stopPolling = () => {
+    pollToken.current++;
+    setJob((j) => (j ? { ...j, phase: "stopped" } : j));
+    setLog(dropPlaceholders());
   };
 
   const print = async () => {
     if (!file || !settings || !device?.connected) return;
     setBanner(null);
+    pollToken.current++; // stop tracking any previous job
+    setJob(null);
     setRun({ phase: "running" });
-    setLog((prev) => [...prev.filter((e) => !e.id.startsWith("ph-")), ...placeholders()]);
+    setLog((prev) => [...dropPlaceholders()(prev), ...placeholders()]);
+    let jobId: string | undefined;
     try {
-      if (stepMode) await runStepped(file, settings);
-      else await runStreamed(file, settings);
+      jobId = stepMode ? await runStepped(file, settings) : await runStreamed(file, settings);
     } catch (e) {
       setRun({ phase: "error", error: e instanceof Error ? e.message : String(e) });
     } finally {
       setGate(null);
-      setLog((prev) => prev.filter((e) => !e.id.startsWith("ph-")));
+      setLog(dropPlaceholders(!!jobId));
     }
+    if (jobId) void pollJob(jobId, stepMode);
   };
 
   const exportLog = () => {
@@ -424,11 +490,8 @@ export default function Console() {
                 )}
                 {!file && !busy && <p className="-mt-2 text-center text-[12px] text-muted">Choose a file to enable printing.</p>}
 
-                {run.phase === "done" && (
-                  <div className="rounded-lg bg-ok-bg px-3 py-2.5 text-[13px] text-ok">
-                    <div className="font-semibold">Sent to the printer ✓</div>
-                    <div className="font-mono text-[12px]">Job {run.jobId}</div>
-                  </div>
+                {run.phase === "done" && job && (
+                  <JobStatus job={job} onStop={stopPolling} onRetry={() => void pollJob(job.jobId, false)} />
                 )}
                 {run.phase === "stopped" && <div className="rounded-lg bg-panel-2 px-3 py-2.5 text-[13px] text-muted">Walkthrough stopped. Nothing further was sent.</div>}
                 {run.phase === "error" && (

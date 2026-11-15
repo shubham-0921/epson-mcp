@@ -22,6 +22,7 @@ export function epsonConfig(): EpsonConfig {
       redirectUri: env.EPSON_REDIRECT_URI || "http://localhost:3000/api/auth/callback",
       authBase: env.EPSON_AUTH_BASE || "https://auth.epsonconnect.com",
       apiBase: env.EPSON_API_BASE || "https://api.epsonconnect.com/api/2",
+      jobInfoPath: env.EPSON_JOB_INFO_PATH || undefined,
     };
   }
   const missing = ["EPSON_CLIENT_ID", "EPSON_CLIENT_SECRET", "EPSON_API_KEY", "EPSON_REDIRECT_URI"].filter((k) => !env[k]);
@@ -33,5 +34,6 @@ export function epsonConfig(): EpsonConfig {
     redirectUri: env.EPSON_REDIRECT_URI!,
     authBase: env.EPSON_AUTH_BASE || "https://auth.epsonconnect.com",
     apiBase: env.EPSON_API_BASE || "https://api.epsonconnect.com/api/2",
+    jobInfoPath: env.EPSON_JOB_INFO_PATH || undefined,
   };
 }

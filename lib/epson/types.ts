@@ -74,6 +74,23 @@ export type CreateJobRequest = {
 
 export type CreateJobResponse = { jobId: string; uploadUri: string };
 
+/** Job status values from the Epson Connect spec (Appendix E), normalized to snake_case. */
+export type JobStatus = "pending" | "processing" | "processing_stopped" | "canceled" | "completed" | "unknown";
+
+export type JobInfo = {
+  status: JobStatus;
+  rawStatus: string; // exactly what Epson returned
+  statusReason: string; // e.g. media_jam, media_empty, marker_supply_empty, attention_required
+  jobName?: string;
+  totalPages?: number;
+  startDate?: string;
+  updateDate?: string;
+  /** canceled or completed — stop polling. */
+  final: boolean;
+  /** Completed or canceled abnormally, e.g. completed + attention_required. */
+  failed: boolean;
+};
+
 export type EpsonConfig = {
   clientId: string;
   clientSecret: string;
@@ -82,6 +99,8 @@ export type EpsonConfig = {
   authBase: string; // https://auth.epsonconnect.com
   apiBase: string; // https://api.epsonconnect.com/api/2
   timeoutMs?: number; // default 30s
+  /** Path template for Get print job information. Default "/printing/jobs/{jobId}". */
+  jobInfoPath?: string;
 };
 
 /** Minimal fetch signature so a mock transport can be injected. */

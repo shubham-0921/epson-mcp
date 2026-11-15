@@ -10,6 +10,8 @@ import type {
   CreateJobResponse,
   DeviceInfo,
   EpsonConfig,
+  JobInfo,
+  JobStatus,
   PrintMode,
   TokenSet,
   TokenStore,
@@ -52,6 +54,39 @@ export function printModeForMime(mime: string): PrintMode {
 export function sanitizeJobName(fileName: string | undefined, now = Date.now()): string {
   const base = (fileName ?? "").replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9]/g, "").slice(0, 32);
   return base || `PC${now}`.slice(0, 32);
+}
+
+const KNOWN_STATUSES: JobStatus[] = ["pending", "processing", "processing_stopped", "canceled", "completed"];
+
+/** camelCase / PascalCase / snake_case → snake_case ("ProcessingStopped" → "processing_stopped"). */
+const snake = (v: string) => v.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[\s-]+/g, "_").toLowerCase();
+
+/**
+ * Accepts the v1 shape (status, status_reason, total_pages…) and the camelCase
+ * shape v2 is expected to use (statusReason, totalPages…).
+ */
+export function normalizeJobInfo(body: unknown): JobInfo {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const str = (...keys: string[]) => {
+    for (const k of keys) if (typeof b[k] === "string") return b[k] as string;
+    return undefined;
+  };
+  const rawStatus = str("status", "jobStatus") ?? "";
+  const s = snake(rawStatus);
+  const status: JobStatus = (KNOWN_STATUSES as string[]).includes(s) ? (s as JobStatus) : "unknown";
+  const statusReason = snake(str("statusReason", "status_reason") ?? "");
+  const pages = b.totalPages ?? b.total_pages;
+  return {
+    status,
+    rawStatus,
+    statusReason,
+    jobName: str("jobName", "job_name"),
+    totalPages: typeof pages === "number" ? pages : undefined,
+    startDate: str("startDate", "start_date"),
+    updateDate: str("updateDate", "update_date"),
+    final: status === "completed" || status === "canceled",
+    failed: status === "canceled" || (status === "completed" && !!statusReason),
+  };
 }
 
 export class EpsonClient {
@@ -243,6 +278,26 @@ export class EpsonClient {
       timeoutMs: this.timeoutMs,
     });
     this.expectOk(res, label);
+  }
+
+  /**
+   * Call 6 — Get print job information. Only valid after Execute print.
+   * v1 path is /printers/{device_id}/jobs/{job_id}; the v2 path is assumed to be
+   * /printing/jobs/{jobId} (the device token already identifies the printer).
+   * Override with EpsonConfig.jobInfoPath if Epson's 2.0 reference differs.
+   */
+  async getJobInfo(accessToken: string, jobId: string, attempt?: number): Promise<JobInfo> {
+    const label = `6 · Get print job information${attempt && attempt > 1 ? ` (check ${attempt})` : ""}`;
+    const path = (this.cfg.jobInfoPath ?? "/printing/jobs/{jobId}").replace("{jobId}", encodeURIComponent(jobId));
+    const res = await loggedFetch(this.transport, this.onLog, {
+      step: "jobInfo",
+      label,
+      method: "GET",
+      url: this.apiUrl(path),
+      headers: this.apiHeaders(accessToken),
+      timeoutMs: this.timeoutMs,
+    });
+    return normalizeJobInfo(this.expectOk(res, label));
   }
 
   private expectOk(res: LoggedResponse, label: string): unknown {

@@ -1,7 +1,7 @@
 // Mock transport: realistic Epson responses (PRD §10.4) with 300–800 ms delay.
 // Plugs into EpsonClient as `transport`, so the client + logger code paths are identical to live.
 //
-// Optional: EPSON_MOCK_FAIL=createJob|upload|print|deviceOffline to demo failure states.
+// Optional: EPSON_MOCK_FAIL=createJob|upload|print|deviceOffline|paperOut|jobCanceled to demo failure states.
 
 import type { Capability } from "./types";
 import type { Transport } from "./types";
@@ -108,7 +108,9 @@ export function createMockTransport(failStep = process.env.EPSON_MOCK_FAIL): Tra
     if (path.endsWith("/printing/jobs") && method === "POST") {
       if (failStep === "createJob")
         return epsonError(400, "invalid_print_settings", "The combination of print settings is not supported by this device.");
-      const jobId = String(1000000 + Math.floor(Math.random() * 8999999));
+      // The jobId encodes its creation time, so job status can be simulated without
+      // server state (serverless instances don't share memory).
+      const jobId = String(Date.now());
       return json(201, { jobId, uploadUri: `https://mock-upload.epsonconnect.com/v1/upload?Key=${rand(32)}&jobId=${jobId}` });
     }
 
@@ -117,6 +119,24 @@ export function createMockTransport(failStep = process.env.EPSON_MOCK_FAIL): Tra
       return json(200, {});
     }
 
+    const info = /\/printing\/jobs\/(\d+)$/.exec(path);
+    if (info && method === "GET") return json(200, mockJobInfo(info[1], failStep));
+
     return epsonError(404, "not_found", `No mock for ${method} ${path}`);
   };
+}
+
+const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ").replace(/-/g, "/");
+
+/** pending (≈3s) → processing (≈6s) → completed, driven by time since the job was created. */
+function mockJobInfo(jobId: string, failStep?: string) {
+  const created = Number(jobId);
+  if (!Number.isFinite(created) || created < 1e12) return { code: "job_not_found", message: "No such job." };
+  const elapsed = Date.now() - created;
+  const base = { jobName: "PrintConsole", startDate: fmt(created), updateDate: fmt(Date.now()) };
+  if (elapsed < 4000) return { ...base, status: "pending", statusReason: "", totalPages: 0 };
+  if (failStep === "jobCanceled") return { ...base, status: "canceled", statusReason: "job_canceled_by_user", totalPages: 0 };
+  if (failStep === "paperOut") return { ...base, status: "processing_stopped", statusReason: "media_empty", totalPages: 0 };
+  if (elapsed < 10000) return { ...base, status: "processing", statusReason: "", totalPages: 0 };
+  return { ...base, status: "completed", statusReason: "", totalPages: 1 };
 }
