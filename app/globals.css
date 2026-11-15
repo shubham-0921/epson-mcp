@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --panel-2: #f1f3f8;
+  --border: #e2e5ee;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --accent: #1747d4;
+  --accent-fg: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --err: #b91c1c;
+  --err-bg: #fee2e2;
+  --warn: #a16207;
+  --warn-bg: #fef3c7;
+  --info-bg: #dbeafe;
+  --code-bg: #0b1224;
+  --code-fg: #dbe4ff;
+  --j-key: #93c5fd;
+  --j-str: #86efac;
+  --j-num: #fcd34d;
+  --j-lit: #f9a8d4;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0e1a;
+    --panel: #111827;
+    --panel-2: #172033;
+    --border: #243049;
+    --fg: #e6eaf5;
+    --muted: #8b97b3;
+    --accent: #5b82ff;
+    --accent-fg: #ffffff;
+    --ok: #4ade80;
+    --ok-bg: #0f2e1d;
+    --err: #f87171;
+    --err-bg: #3a1414;
+    --warn: #fbbf24;
+    --warn-bg: #352708;
+    --info-bg: #14234a;
+    --code-bg: #070b16;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0e1a;
+  --panel: #111827;
+  --panel-2: #172033;
+  --border: #243049;
+  --fg: #e6eaf5;
+  --muted: #8b97b3;
+  --accent: #5b82ff;
+  --accent-fg: #ffffff;
+  --ok: #4ade80;
+  --ok-bg: #0f2e1d;
+  --err: #f87171;
+  --err-bg: #3a1414;
+  --warn: #fbbf24;
+  --warn-bg: #352708;
+  --info-bg: #14234a;
+  --code-bg: #070b16;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-info-bg: var(--info-bg);
+  --color-code: var(--code-bg);
+  --color-code-fg: var(--code-fg);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.j-key { color: var(--j-key); }
+.j-str { color: var(--j-str); }
+.j-num { color: var(--j-num); }
+.j-lit { color: var(--j-lit); }
+
+select, input[type="number"] {
+  background: var(--panel);
+}
