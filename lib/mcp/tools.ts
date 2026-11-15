@@ -219,6 +219,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
       description: [
         "Prints on the user's connected Epson printer. Uses real paper and ink, so confirm with the user before calling.",
         "Pass `source` as Markdown you write (simple lists, letters, notes), as HTML you write when the layout matters (menus, price tags, label sheets, signs, certificates, flyers), or as base64 bytes of a PDF, JPEG or PNG (max 1 MB).",
+        "If the user shares a PDF, image or document you can read but don't have as raw bytes (e.g. a chat attachment), recreate it as HTML and print that: keep the text exactly as written (don't summarise or correct it) and match the layout as closely as you can (headings, tables, columns, alignment, bold, colours). Pick the paper_size the original uses (often A4 or Letter), put each original page in its own block with page-break-after, and tell the user you printed a recreation, not the original file. Only use base64 when you actually have the file's bytes.",
         "All settings are optional and take readable values such as \"A4\", \"Letter\", \"plain\", \"photo paper\", \"high\", \"black and white\".",
         `Unset settings use the printer's defaults. Jobs over ${LIMITS.maxPagesWithoutConfirm} printed pages (pages × copies) need confirm_large: true, which you should only set after the user agrees.`,
         "Returns a job ID; use get_print_job_status to follow it.",
