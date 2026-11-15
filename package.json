@@ -10,7 +10,8 @@
     "mcp": "tsx mcp/stdio.mts",
     "mcp:login": "tsx mcp/login.mts",
     "mcp:smoke": "tsx scripts/mcp-smoke.mts",
-    "mcp:remote-smoke": "tsx scripts/mcp-remote-smoke.mts"
+    "mcp:remote-smoke": "tsx scripts/mcp-remote-smoke.mts",
+    "render-templates": "tsx scripts/render-templates.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

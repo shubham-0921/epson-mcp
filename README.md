@@ -108,3 +108,10 @@ The same four tools, served over Streamable HTTP at `/api/mcp` for claude.ai, Cl
 **Test:** `npm run mcp:remote-smoke -- http://localhost:3005` against a dev server running with `EPSON_MOCK=true` (21 checks: discovery, registration, consent, PKCE, single-use codes, tools, progress, refresh rotation).
 
 Code: `app/api/mcp/route.ts`, `app/oauth/*`, `app/.well-known/*`, `lib/oauth/*` (KV, crypto, records, Epson callback), `lib/mcp/token-store.ts`.
+
+## Business print kits (Claude plugins)
+
+`plugins/` is a Claude plugin marketplace. It holds vertical print kits (`epson-restaurant`, `epson-school`).
+Each one bundles the remote connector with a skill and tested HTML templates for that business's everyday
+print jobs. See [plugins/README.md](plugins/README.md). `npm run render-templates` renders every template on
+A4 and Letter and checks the page counts.
