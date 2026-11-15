@@ -12,9 +12,10 @@ export type AllowedMime = (typeof ALLOWED_MIME)[number];
 
 export type PrintSource =
   | { type: "markdown"; markdown: string; title?: string }
+  | { type: "html"; html: string; title?: string }
   | { type: "base64"; data: string; mimeType: string; fileName?: string };
 
-export type PreparedFile = { bytes: Uint8Array; mime: AllowedMime; fileName: string; pages: number };
+export type PreparedFile = { bytes: Uint8Array; mime: AllowedMime; fileName: string; pages: number; notes?: string[] };
 
 export class SourceError extends Error {
   constructor(message: string) {
@@ -23,7 +24,14 @@ export class SourceError extends Error {
   }
 }
 
-export async function prepareSource(source: PrintSource, paperSize = "ps_a4"): Promise<PreparedFile> {
+export async function prepareSource(source: PrintSource, paperSize = "ps_a4", opts: { borderless?: boolean } = {}): Promise<PreparedFile> {
+  if (source.type === "html") {
+    if (!source.html.trim()) throw new SourceError("The HTML to print is empty.");
+    const { htmlToPdf } = await import("./html-pdf");
+    const { bytes, blocked } = await htmlToPdf(source.html, paperSize, { borderless: opts.borderless, title: source.title });
+    const notes = blocked.length ? [`Blocked ${blocked.length} resource(s) (only https on public hosts and data: URLs load): ${blocked.slice(0, 3).join(", ")}`] : undefined;
+    return check({ bytes, mime: "application/pdf", fileName: `${source.title || "Document"}.pdf`, pages: await countPdfPages(bytes), notes });
+  }
   if (source.type === "markdown") {
     if (!source.markdown.trim()) throw new SourceError("The markdown to print is empty.");
     const bytes = await markdownToPdf(source.markdown, paperSize);

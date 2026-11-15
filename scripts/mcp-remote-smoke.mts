@@ -83,6 +83,8 @@ const st: any = await client.callTool({ name: "get_printer_status", arguments: {
 check("get_printer_status", !st.isError && st.structuredContent?.online === true, st.content[0].text);
 const pr: any = await client.callTool({ name: "print_document", arguments: { source: { type: "markdown", title: "Remote test", markdown: "# Hello from the remote server\n\n- one\n- two" }, color: "black and white" } });
 check("print_document", !pr.isError && !!pr.structuredContent?.jobId, pr.content[0].text);
+const hp: any = await client.callTool({ name: "print_document", arguments: { source: { type: "html", title: "Shelf tag", html: "<div style='border:1px solid;padding:4mm;width:60mm'><b>Oat Milk</b><div style='font:800 28pt sans-serif'>€2.19</div></div>" } } });
+check("print_document with html (Chromium on the server)", !hp.isError && hp.structuredContent?.pages === 1, hp.content[0].text);
 const progress: string[] = [];
 const js: any = await client.callTool({ name: "get_print_job_status", arguments: { job_id: pr.structuredContent.jobId, wait_seconds: 20 } }, undefined, { onprogress: (p) => progress.push(p.message ?? ""), timeout: 60_000 });
 check("job status waits until printed", js.structuredContent?.status === "completed", js.content[0].text);

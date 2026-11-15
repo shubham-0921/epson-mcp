@@ -49,6 +49,20 @@ check("borderless on plain paper is refused", !!e1.isError && /Borderless isn't 
 const e2 = await call("print_document", { source: { type: "markdown", markdown: "x" }, paper_size: "A3" });
 check("unsupported size lists options", !!e2.isError && /Options: A4, Letter/.test(e2.text), e2.text);
 
+const h1 = await call("print_document", {
+  source: { type: "html", title: "Table tent", html: "<style>.t{height:50%;display:flex;align-items:center;justify-content:center;font:700 40pt sans-serif}.r{transform:rotate(180deg)}</style><div class='t r'>Reserved</div><div class='t'>Reserved</div>" },
+  paper_size: "A5",
+});
+check("print html on A5", !h1.isError && h1.structuredContent?.pages === 1 && h1.structuredContent?.settings?.paperSize === "A5", h1.text);
+const h2 = await call("print_document", {
+  source: { type: "html", html: "<p>Hi</p><img src='http://169.254.169.254/x.png'>" },
+});
+check("html blocks internal URLs and says so", !h2.isError && /Blocked 1 resource/.test(h2.text), h2.text.replace(/.*Note: /, "Note: "));
+const h3 = await call("print_document", {
+  source: { type: "html", html: Array.from({ length: 40 }, (_, i) => `<section style="page-break-after:always">Page ${i + 1}</section>`).join("") },
+});
+check("html page count feeds the 30-page limit", !!h3.isError && /40 pages/.test(h3.text), h3.text);
+
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const p3 = await call("print_document", { source: { type: "base64", data: png, mimeType: "image/png", fileName: "dot.png" }, paper_size: "4x6" });
 check("base64 PNG prints as photo", !p3.isError && p3.structuredContent?.settings?.paperSize === "4 × 6 in", p3.text);

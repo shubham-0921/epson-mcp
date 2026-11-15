@@ -120,6 +120,19 @@ const sourceSchema = z.discriminatedUnion("type", [
     title: z.string().max(80).optional().describe("Document title, used as the file and job name."),
   }),
   z.object({
+    type: z.literal("html"),
+    html: z
+      .string()
+      .min(1)
+      .describe(
+        "A full HTML document or a fragment, laid out with CSS for exact control (menus, labels, signs, certificates, forms). " +
+          "Don't set @page size: the page is sized to paper_size automatically. You may set @page margin (default 12mm; 0 when borderless). " +
+          "Use mm/in units, break-inside: avoid, and page-break-after for multi-page layouts. JavaScript doesn't run. " +
+          "Images and fonts load only from public https URLs or data: URLs.",
+      ),
+    title: z.string().max(80).optional().describe("Document title, used as the file and job name."),
+  }),
+  z.object({
     type: z.literal("base64"),
     data: z.string().min(1).describe("File bytes, base64-encoded. At most 1 MB decoded."),
     mimeType: z.enum(["application/pdf", "image/jpeg", "image/png"]),
@@ -205,7 +218,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
       title: "Print a document",
       description: [
         "Prints on the user's connected Epson printer. Uses real paper and ink, so confirm with the user before calling.",
-        "Pass `source` as Markdown you write (for lists, letters, notes, summaries) or as base64 bytes of a PDF, JPEG or PNG (max 1 MB).",
+        "Pass `source` as Markdown you write (simple lists, letters, notes), as HTML you write when the layout matters (menus, price tags, label sheets, signs, certificates, flyers), or as base64 bytes of a PDF, JPEG or PNG (max 1 MB).",
         "All settings are optional and take readable values such as \"A4\", \"Letter\", \"plain\", \"photo paper\", \"high\", \"black and white\".",
         `Unset settings use the printer's defaults. Jobs over ${LIMITS.maxPagesWithoutConfirm} printed pages (pages × copies) need confirm_large: true, which you should only set after the user agrees.`,
         "Returns a job ID; use get_print_job_status to follow it.",
@@ -253,7 +266,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
             copies: args.copies,
           });
 
-          const file = await prepareSource(args.source, settings.paperSize);
+          const file = await prepareSource(args.source, settings.paperSize, { borderless: settings.borderless });
           const printed = file.pages * settings.copies;
           if (printed > LIMITS.maxPagesWithoutConfirm && !args.confirm_large) {
             return fail(
@@ -265,7 +278,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
           const refused = await ctx.beforePrint?.();
           if (refused) return fail(refused);
 
-          const jobName = sanitizeJobName(args.source.type === "markdown" ? args.source.title || "Document" : file.fileName);
+          const jobName = sanitizeJobName(args.source.type === "base64" ? file.fileName : args.source.title || "Document");
           const { jobId, uploadUri } = await c.createJob(token, { jobName, printMode: mode, printSettings: settings });
           await c.uploadFile(uploadUri, file.bytes, file.mime);
           await c.executePrint(token, jobId);
@@ -284,7 +297,8 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
           const used = describeSettings(settings);
           return ok(
             `Sent "${file.fileName}" to ${device.productName}: job ${jobId}, ${file.pages} page${file.pages === 1 ? "" : "s"} × ${used.copies}, ` +
-              `${used.paperSize} ${used.paperType.toLowerCase()}, ${used.quality.toLowerCase()} quality, ${used.color.toLowerCase()}. Status: ${description}`,
+              `${used.paperSize} ${used.paperType.toLowerCase()}, ${used.quality.toLowerCase()} quality, ${used.color.toLowerCase()}. Status: ${description}` +
+              (file.notes?.length ? ` Note: ${file.notes.join(" ")}` : ""),
             { jobId, fileName: file.fileName, pages: file.pages, copies: used.copies, settings: used, status, description },
           );
         });
