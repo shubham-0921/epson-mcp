@@ -13,7 +13,10 @@ const check = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
   if (!cond) failures++;
 };
-const get = (path: string, init?: RequestInit) => fetch(path.startsWith("http") ? path : BASE + path, { redirect: "manual", ...init });
+// For protected Vercel previews: VERCEL_BYPASS=<protection bypass secret>
+const BYPASS: Record<string, string> = process.env.VERCEL_BYPASS ? { "x-vercel-protection-bypass": process.env.VERCEL_BYPASS } : {};
+const get = (path: string, init: RequestInit = {}) =>
+  fetch(path.startsWith("http") ? path : BASE + path, { redirect: "manual", ...init, headers: { ...BYPASS, ...(init.headers as Record<string, string>) } });
 
 // 1. Unauthenticated call → 401 pointing at resource metadata
 const r401 = await get("/api/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" });
@@ -73,7 +76,7 @@ check("code can't be reused", reuse.status === 400);
 // 7. Tools over Streamable HTTP
 const connect = async (accessToken: string) => {
   const c = new Client({ name: "remote-smoke", version: "0" });
-  await c.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { Authorization: `Bearer ${accessToken}` } } }));
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { ...BYPASS, Authorization: `Bearer ${accessToken}` } } }));
   return c;
 };
 const client = await connect(tok.access_token);
