@@ -9,10 +9,12 @@
     "lint": "eslint",
     "mcp": "tsx mcp/stdio.mts",
     "mcp:login": "tsx mcp/login.mts",
-    "mcp:smoke": "tsx scripts/mcp-smoke.mts"
+    "mcp:smoke": "tsx scripts/mcp-smoke.mts",
+    "mcp:remote-smoke": "tsx scripts/mcp-remote-smoke.mts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@upstash/redis": "^1.41.0",
     "iron-session": "^8.0.4",
     "marked": "^18.2.0",
     "next": "16.4.6",

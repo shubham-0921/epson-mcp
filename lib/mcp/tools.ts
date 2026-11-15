@@ -19,6 +19,8 @@ export type ToolContext = {
   onLog?: LogSink;
   /** Message shown when the user must (re)connect their printer. */
   reconnectHint: string;
+  /** Called right before a job is created; return a message to refuse (e.g. rate limit). */
+  beforePrint?: () => Promise<string | null>;
 };
 
 export const LIMITS = { maxCopies: 10, maxPagesWithoutConfirm: 30, maxWaitSeconds: 50 };
@@ -259,6 +261,9 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
                 `Ask the user to confirm, then call again with confirm_large: true.`,
             );
           }
+
+          const refused = await ctx.beforePrint?.();
+          if (refused) return fail(refused);
 
           const jobName = sanitizeJobName(args.source.type === "markdown" ? args.source.title || "Document" : file.fileName);
           const { jobId, uploadUri } = await c.createJob(token, { jobName, printMode: mode, printSettings: settings });

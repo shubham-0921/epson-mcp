@@ -94,3 +94,17 @@ Limits: 1–10 copies; more than 30 printed pages (pages × copies) needs `confi
 - `npm run mcp` runs the server on stdio by hand. Logs (redacted) go to stderr.
 - Code: tools in `lib/mcp/tools.ts` (transport-agnostic, reused by the Phase 2 remote endpoint), sources and Markdown → PDF in `lib/mcp/sources.ts`, local token file in `lib/mcp/file-store.ts`, entry points in `mcp/`.
 - Markdown → PDF uses the standard PDF fonts, so characters outside Windows-1252 (e.g. emoji) print as `?`.
+
+## MCP server (Phase 2: remote, OAuth)
+
+The same four tools, served over Streamable HTTP at `/api/mcp` for claude.ai, Claude Desktop and mobile. Add `https://<deployment>/api/mcp` as a custom connector in Claude.
+
+**Connecting:** Claude gets a 401 pointing at `/.well-known/oauth-protected-resource/api/mcp`, registers itself (`/oauth/register`), and opens `/oauth/authorize`. After a consent page the user signs in at Epson; Epson returns to the existing `/api/auth/callback`, which recognises the `mcp_` state, stores the Epson tokens as a printer connection and sends a one-time code back to Claude. Claude swaps it at `/oauth/token` (PKCE S256) for a 1-hour access token and a 30-day refresh token that rotates on each use. No new Epson redirect URI is needed.
+
+**Storage:** Upstash Redis (`UPSTASH_REDIS_REST_URL`/`_TOKEN` or `KV_REST_API_URL`/`_TOKEN`). Epson tokens are encrypted with AES-256-GCM (`MCP_ENCRYPTION_KEY`, or derived from `SESSION_SECRET`); our tokens are stored only as SHA-256 hashes. Refreshes of Epson tokens take a 10-second Redis lock, because Epson replaces the refresh token each time. Locally, without Redis, an in-memory store is used; on Vercel the routes refuse to run without Redis.
+
+**Limits:** as Phase 1, plus 20 print jobs per connection per hour.
+
+**Test:** `npm run mcp:remote-smoke -- http://localhost:3005` against a dev server running with `EPSON_MOCK=true` (21 checks: discovery, registration, consent, PKCE, single-use codes, tools, progress, refresh rotation).
+
+Code: `app/api/mcp/route.ts`, `app/oauth/*`, `app/.well-known/*`, `lib/oauth/*` (KV, crypto, records, Epson callback), `lib/mcp/token-store.ts`.

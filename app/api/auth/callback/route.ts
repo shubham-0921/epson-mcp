@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { collector, makeClient, toErrorPayload } from "@/lib/server/epson";
 import { redactUrl } from "@/lib/epson/redact";
+import { handleMcpEpsonCallback } from "@/lib/oauth/epson-callback";
 import type { ApiLogEntry } from "@/lib/epson/types";
 
 // Epson redirects here with ?code&iss&state. Verify state, then run Call A.
@@ -14,6 +15,8 @@ export async function GET(request: Request) {
   // for pasting into the terminal. No session, no token exchange here — the code is
   // useless without the client secret, and the CLI checks the state.
   if (state?.startsWith("cli_")) return cliCodePage(state, code, epsonError);
+  // Sign-in started by Claude connecting to the remote MCP server (/oauth/authorize).
+  if (state?.startsWith("mcp_")) return handleMcpEpsonCallback(state, code, epsonError);
 
   const session = await getSession();
   const home = new URL("/", request.url);
