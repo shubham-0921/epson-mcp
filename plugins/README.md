@@ -10,7 +10,7 @@ quality and colour settings to use. Claude fills in the layout and prints it thr
 | `epson-school` | `school-printing` | worksheet + answer key, certificate, attendance register, name tags (8/sheet), flashcards (8/sheet, double-sided) |
 
 Each plugin's `.mcp.json` points at the remote connector
-`https://epson-print-console-shubham.vercel.app/api/mcp`. The first tool call opens the Epson sign-in (OAuth).
+`https://epson-mcp-server.vercel.app/api/mcp`. The first tool call opens the Epson sign-in (OAuth).
 
 ## Install
 

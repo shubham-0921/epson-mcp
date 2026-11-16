@@ -2,7 +2,7 @@
   "mcpServers": {
     "epson-print": {
       "type": "http",
-      "url": "https://epson-print-console-shubham.vercel.app/api/mcp"
+      "url": "https://epson-mcp-server.vercel.app/api/mcp"
     }
   }
 }
