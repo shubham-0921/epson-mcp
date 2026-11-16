@@ -21,6 +21,8 @@ export type ToolContext = {
   reconnectHint: string;
   /** Called right before a job is created; return a message to refuse (e.g. rate limit). */
   beforePrint?: () => Promise<string | null>;
+  /** Called after every tool call (usage analytics). Must not throw. */
+  onToolCall?: (call: { tool: string; args: Record<string, unknown>; result: CallToolResult; ms: number }) => void | Promise<void>;
 };
 
 export const LIMITS = { maxCopies: 10, maxPagesWithoutConfirm: 30, maxWaitSeconds: 50 };
@@ -145,7 +147,20 @@ const sourceSchema = z.discriminatedUnion("type", [
 export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
   const client = () => ctx.makeClient(ctx.onLog);
 
-  server.registerTool(
+  // registerTool, timing each call and reporting it to ctx.onToolCall.
+  const register = ((name: string, config: unknown, cb: (...a: unknown[]) => Promise<CallToolResult>) =>
+    (server.registerTool as (n: string, c: unknown, cb: unknown) => unknown)(name, config, async (...a: unknown[]) => {
+      const started = Date.now();
+      const result = await cb(...a);
+      try {
+        await ctx.onToolCall?.({ tool: name, args: (a[0] ?? {}) as Record<string, unknown>, result, ms: Date.now() - started });
+      } catch {
+        /* analytics must not affect the tool result */
+      }
+      return result;
+    })) as unknown as McpServer["registerTool"];
+
+  register(
     "get_printer_status",
     {
       title: "Get printer status",
@@ -169,7 +184,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
     },
   );
 
-  server.registerTool(
+  register(
     "get_print_options",
     {
       title: "Get print options",
@@ -212,7 +227,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
     },
   );
 
-  server.registerTool(
+  register(
     "print_document",
     {
       title: "Print a document",
@@ -309,7 +324,7 @@ export function registerEpsonTools(server: McpServer, ctx: ToolContext) {
     },
   );
 
-  server.registerTool(
+  register(
     "get_print_job_status",
     {
       title: "Get print job status",

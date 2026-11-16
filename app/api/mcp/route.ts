@@ -9,6 +9,7 @@ import { connectionTokenStore } from "@/lib/mcp/token-store";
 import { CORS, preflight, resourceMetadataUrl } from "@/lib/oauth/http";
 import { countPrint, verifyAccessToken } from "@/lib/oauth/store";
 import type { ApiLogEntry } from "@/lib/epson/types";
+import { recordUsage } from "@/lib/analytics/usage";
 
 export const maxDuration = 120; // job-status waits are capped at 50s
 
@@ -32,7 +33,10 @@ async function handle(request: Request) {
   const token = header.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) return unauthorized(request);
   const grant = await verifyAccessToken(token);
-  if (!grant) return unauthorized(request, "invalid_token");
+  if (!grant) {
+    await recordUsage({ type: "invalid_token" });
+    return unauthorized(request, "invalid_token");
+  }
 
   const connId = grant.connId;
   const tag = connId.slice(0, 6);
@@ -42,16 +46,42 @@ async function handle(request: Request) {
     console.log(`[mcp ${tag}] ${e.label} · ${e.method} ${e.url} → ${e.response?.status ?? "ERR"} ${e.durationMs ?? 0}ms${e.error ? ` (${e.error})` : ""}`);
   };
 
+  // An MCP session starts with "initialize", which names the AI app (clientInfo).
+  if (request.method === "POST") {
+    const body = await request.clone().json().catch(() => null);
+    const init = (Array.isArray(body) ? body : [body]).find((m) => m?.method === "initialize");
+    if (init) {
+      const info = init.params?.clientInfo;
+      await recordUsage({ type: "session", conn: connId, app: [info?.name, info?.version].filter(Boolean).join(" ") || "unknown" });
+    }
+  }
+
   const server = new McpServer({ name: "epson-print", version: "0.2.0" }, { instructions: INSTRUCTIONS });
   registerEpsonTools(server, {
     makeClient,
     store: connectionTokenStore(connId, (rt) => makeClient(onLog).refresh(rt)),
     onLog,
     reconnectHint: "The Epson connection has expired or was revoked. Ask the user to reconnect the Epson Print connector in Claude's settings.",
-    beforePrint: async () =>
-      (await countPrint(connId)) > PRINTS_PER_HOUR
-        ? `Print limit reached: at most ${PRINTS_PER_HOUR} print jobs per hour for this printer connection. Try again later.`
-        : null,
+    beforePrint: async () => {
+      if ((await countPrint(connId)) <= PRINTS_PER_HOUR) return null;
+      await recordUsage({ type: "rate_limited", conn: connId });
+      return `Print limit reached: at most ${PRINTS_PER_HOUR} print jobs per hour for this printer connection. Try again later.`;
+    },
+    onToolCall: ({ tool, args, result, ms }) => {
+      const out = result.structuredContent as { pages?: number; copies?: number; settings?: { paperSize?: string } } | undefined;
+      const firstText = result.content?.find((c) => c.type === "text");
+      return recordUsage({
+        type: "tool",
+        conn: connId,
+        tool,
+        ok: !result.isError,
+        ms,
+        pages: out?.pages ? out.pages * (out.copies ?? 1) : undefined,
+        paper: out?.settings?.paperSize,
+        source: tool === "print_document" ? (args.source as { type?: string } | undefined)?.type : undefined,
+        error: result.isError && firstText?.type === "text" ? firstText.text : undefined,
+      });
+    },
   });
 
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });

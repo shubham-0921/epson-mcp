@@ -1,5 +1,6 @@
 import { isAllowedRedirectUri, json, oauthError, preflight } from "@/lib/oauth/http";
 import { registerClient } from "@/lib/oauth/store";
+import { recordUsage } from "@/lib/analytics/usage";
 
 // RFC 7591 dynamic client registration. Public clients only (PKCE, no secret).
 export async function POST(request: Request) {
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   const name = typeof body.client_name === "string" ? body.client_name.slice(0, 100) : undefined;
 
   const client = await registerClient({ redirect_uris: uris as string[], client_name: name });
+  await recordUsage({ type: "client_registered", app: name ?? "unnamed" });
   return json(
     {
       ...client,
